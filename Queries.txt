@@ -1,0 +1,168 @@
+Stored Procedures:
+
+Create Account:
+	create or replace PROCEDURE      CREATE_ACCOUNT
+	(
+  	NAME_P IN VARCHAR2
+	, EMAIL_P IN VARCHAR2
+	, PASSWORD_P IN VARCHAR2
+	) AS
+	BEGIN
+  	insert into aaACCOUNTS(name, email, password, account_number) values(NAME_P, EMAIL_P, PASSWORD_P, -1);
+	
+  	update aaACCOUNTS set account_number = id + 10000;
+
+	END CREATE_ACCOUNT;
+
+Login Account:
+	create or replace PROCEDURE      LOGIN
+	(
+  	EMAIL_P IN VARCHAR2
+	, PASSWORD_P IN VARCHAR2
+	, ID_P OUT NUMBER
+	, NAME_P OUT VARCHAR2
+	, ACCOUNT_NUMBER_P OUT NUMBER
+	, BALANCE_P OUT NUMBER
+	, STATUS_P OUT NUMBER
+	) AS
+ 	 cnt int;
+
+	BEGIN
+  	select count(*) into cnt from aaaccounts where email = email_P and password = password_p;
+
+  	if cnt = 0 then
+    	status_p := -1;
+  	else
+    	select id, name, account_number, balance into id_p, name_p, account_number_p, balance_p 
+    	from aaaccounts where email = email_P and password =  password_p;
+
+    	status_p := 1;
+
+  	end if;
+	END LOGIN;
+
+
+
+Deposit Amount:
+	create or replace PROCEDURE      DEPOSIT_AMOUNT
+	(
+  	ACCOUNT_NUMBER_P IN NUMBER
+	, AMOUNT_P IN NUMBER
+	, STATUS_P OUT NUMBER
+	) AS
+	BEGIN
+ 	 if amount_p <= 0 then
+    	status_p := -2;
+  	else
+   	 update aaaccounts set balance = balance + amount_p where account_number = account_number_p;
+
+    	insert into aatransactions (from_account, type, amount) values(account_number_p, 'Deposit', amount_p);
+
+    	status_p := 1;
+  	end if;
+	END DEPOSIT_AMOUNT;
+	
+Withdraw Amount:
+	create or replace PROCEDURE      WITHDRAW_AMOUNT
+	(
+	  ACCOUNT_NUMBER_P IN NUMBER
+	, AMOUNT_P IN NUMBER
+	, STATUS_P OUT NUMBER
+	) AS
+	  bal int;
+	BEGIN
+	  bal := 0;
+	  if amount_p <= 0 then
+	    status_p := -2;
+	  else
+	    select balance into bal from aaaccounts where account_number = account_number_p;
+	
+	    if amount_p > bal then
+	      status_p := -1;
+	    else
+	      update aaaccounts set balance = balance - amount_p where account_number = account_number_p;
+	
+	      insert into aatransactions (from_account, type, amount) values(account_number_p, 'Withdraw', amount_p);
+	
+	      status_p := 1;
+	    end if;
+	  end if;
+	END WITHDRAW_AMOUNT;
+	
+Transfer Amount:
+	create or replace PROCEDURE      TRANSFER_AMOUNT
+	(
+	  FROM_ACCOUNT_P IN NUMBER
+	, TO_ACCOUNT_P IN NUMBER
+	, AMOUNT_P IN NUMBER
+	, STATUS_P OUT NUMBER
+	) AS
+	  bal int;
+	  cnt int;
+	BEGIN
+	  if amount_p <= 0 then
+	    status_p := -3;
+	  else
+	    select balance into bal from aaaccounts where account_number = FROM_ACCOUNT_P;
+	    if amount_p > bal then
+	      status_p := -2;
+	    else
+	      select count(*) into cnt from aaaccounts where account_number = TO_ACCOUNT_P;
+	      if cnt = 0 then
+	        status_p := -1;
+	      else
+	        update aaaccounts set balance = balance - amount_p where account_number = FROM_ACCOUNT_P;
+	
+	        update aaaccounts set balance = balance + amount_p where account_number = TO_ACCOUNT_P;
+	
+	        insert into aatransactions (from_account, type, to_account, amount) values (FROM_ACCOUNT_P, 'Transfer', TO_ACCOUNT_P, amount_p);
+	        status_p := 1;
+	      end if;
+	    end if;
+	  end if;
+	END TRANSFER_AMOUNT;
+
+Functions:
+	create or replace FUNCTION      GET_TRANSACTIONS
+	(
+	  FROM_ACCOUNT_P IN NUMBER
+	) RETURN aaTRAN_T AS
+	  transactionList aaTRAN_T;
+	BEGIN
+	  select aaTRAN(id, from_account, type, to_account, amount) bulk collect
+	  into transactionList from aatransactions
+	  where from_account = from_account_p;
+	  return transactionList;
+	END GET_TRANSACTIONS;
+	
+	
+Triggers:
+	AAACCOUNTS_TRG:
+	create or replace TRIGGER AAACCOUNTS_TRG 
+	BEFORE INSERT ON AAACCOUNTS 
+	FOR EACH ROW 
+	BEGIN
+	  IF INSERTING AND :NEW.ID IS NULL THEN
+	      SELECT AAACCOUNTS_SEQ.NEXTVAL INTO :NEW.ID FROM SYS.DUAL;
+	  END IF;
+	END;
+	AATRANSACTIONS_TRG:
+	create or replace TRIGGER AATRANSACTIONS_TRG 
+	BEFORE INSERT ON AATRANSACTIONS 
+	FOR EACH ROW 
+	BEGIN
+	    IF INSERTING AND :NEW.ID IS NULL THEN
+	      SELECT AATRANSACTIONS_SEQ.NEXTVAL INTO :NEW.ID FROM SYS.DUAL;
+	    END IF;
+	END;
+Types:
+	create or replace type aaTRAN_T is table of AaTran;
+	create or replace TYPE      AaTran AS OBJECT
+	(
+	  id int,
+	  from_account int,
+	  type varchar2(20),
+	  to_account int,
+	  amount decimal
+	);
+	
